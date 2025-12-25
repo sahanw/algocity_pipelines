@@ -1,0 +1,45 @@
+---
+# Application: algocity-pathfinder
+# Pipeline configuration for deploying algocity-pathfinder service
+
+application:
+  name: algocity-pathfinder
+  service_name: algocity-pathfinder
+
+repositories:
+  charts:
+    url: https://github.com/sahanw/algocity_charts.git
+    branch: main
+  values:
+    url: https://github.com/sahanw/algocity_values.git
+    branch: main
+
+docker:
+  registry: wickysd
+  image_name: algocity-pathfinder
+
+helm:
+  chart_path: algocity_charts/charts/algocity-pathfinder
+  values_file: algocity_values/algocity_pathfinder/values/application_values.yaml
+
+kubernetes:
+  namespace: default
+
+pipeline:
+  stages:
+    - name: Checkout Repositories
+      steps:
+        - clone_charts_repo
+        - clone_values_repo
+    
+    - name: Build Docker Image
+      steps:
+        - build_image
+        - tag_latest
+        - push_to_registry
+    
+    - name: Deploy with Helm
+      steps:
+        - build_helm_dependencies
+        - render_manifest
+        - apply_to_k8s
