@@ -1,5 +1,16 @@
 jenkins:
   systemMessage: "AlgoCity CI/CD Pipelines - Auto-configured via JCasC"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: "github-token"
+              username: "sahanw"
+              password: "${GITHUB_TOKEN}"
+              description: "GitHub Personal Access Token for AlgoCity Pipelines"
   
 jobs:
   - script: >
@@ -9,6 +20,7 @@ jobs:
           git {
             remote {
               url('https://github.com/sahanw/algocity_pipelines.git')
+              credentials('github-token')
             }
             branch('*/main')
             extensions {
