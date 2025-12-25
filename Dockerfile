@@ -35,9 +35,6 @@ RUN curl -fsSL -o /tmp/helm.tar.gz https://get.helm.sh/helm-${HELM_VERSION}-linu
 # Install k3d to allow importing images into local k3s clusters
 RUN curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 
-# Seed Jenkins with job definitions so the pipeline appears immediately.
-COPY jenkins/init.groovy.d/ /usr/share/jenkins/ref/init.groovy.d/
-
 # Pre-install pipeline and workflow plugins to bootstrap CI jobs faster.
 RUN jenkins-plugin-cli --plugins \
     pipeline-model-api \
@@ -49,13 +46,11 @@ RUN jenkins-plugin-cli --plugins \
     credentials-binding \
     github
 
-# Copy SSH keys into the image so the Jenkins user can access GitHub/GitLab
-# Copy SSH keys and config into the image
-# Note: /var/jenkins_home is a VOLUME, so RUN commands cannot modify it.
-# We must prepare files locally with correct permissions and COPY them.
-COPY --chown=jenkins:jenkins id_rsa /var/jenkins_home/.ssh/id_rsa
-COPY --chown=jenkins:jenkins id_rsa.pub /var/jenkins_home/.ssh/id_rsa.pub
-COPY --chown=jenkins:jenkins ssh_config /var/jenkins_home/.ssh/config
+# SSH keys should be mounted as Kubernetes secrets at runtime
+# Create SSH directory with proper permissions
+RUN mkdir -p /var/jenkins_home/.ssh && \
+    chown jenkins:jenkins /var/jenkins_home/.ssh && \
+    chmod 700 /var/jenkins_home/.ssh
 
 USER jenkins
 

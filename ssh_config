@@ -1,3 +1,0 @@
-Host github.com
-    IdentityFile /var/jenkins_home/.ssh/id_rsa
-    StrictHostKeyChecking no

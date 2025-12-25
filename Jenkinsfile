@@ -2,95 +2,101 @@ pipeline {
     agent any
 
     environment {
-        SERVICE_NAME = 'algocity_pipelines'
-        VERSION = '1.0.0'
-        DOCKER_REGISTRY = 'localhost:5000'  // Local registry for development
-        IMAGE_NAME = 'algocity'
-        VALUES_FILE = '../values/algocity_pipelines/values/application_values.yaml'
-        CHARTS_REPO = "${WORKSPACE}/charts"
-        MANIFEST_FILE = 'k8s-manifest.yaml'
+        SERVICE_NAME = 'algocity-pipelines'
+        VERSION = "${env.BUILD_NUMBER ?: '1.0.0'}"
+        DOCKER_REGISTRY = 'wickysd'
+        IMAGE_NAME = "${DOCKER_REGISTRY}/${SERVICE_NAME}"
+        
+        // GitHub repositories
+        CHARTS_REPO_URL = 'https://github.com/sahanw/algocity_charts.git'
+        VALUES_REPO_URL = 'https://github.com/sahanw/algocity_values.git'
+        
+        // Helm configuration (will use workspace paths after checkout)
+        CHART_PATH = "${WORKSPACE}/algocity_charts/charts/algocity-pipelines"
+        VALUES_FILE = "${WORKSPACE}/algocity_values/algocity_pipelines/values/application_values.yaml"
+        
+        // K8s configuration
         K8S_NAMESPACE = 'default'
     }
 
     stages {
-
-
-        stage('Checkout Charts') {
+        stage('Checkout Repositories') {
             steps {
-                dir('charts') {
-                    git branch: 'main', url: 'git@github.com:sahanw/algocity_charts.git'
-                }
-                dir('values') {
-                    git branch: 'main', url: 'git@github.com:sahanw/algocity_values.git'
+                script {
+                    echo "Cloning algocity_charts from GitHub..."
+                    dir('algocity_charts') {
+                        git branch: 'main', url: "${CHARTS_REPO_URL}"
+                    }
+                    
+                    echo "Cloning algocity_values from GitHub..."
+                    dir('algocity_values') {
+                        git branch: 'main', url: "${VALUES_REPO_URL}"
+                    }
+                    
+                    echo "Repositories cloned successfully"
                 }
             }
         }
-
-        stage('Build and Push Image') {
+        stage('Build Docker Image') {
             steps {
                 script {
-                    def fullImageName = "${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}"
+                    def fullImageName = "${IMAGE_NAME}:${VERSION}"
                     echo "Building Docker image: ${fullImageName}"
                     sh "docker build -t ${fullImageName} ."
-
-                    echo "Importing image to k3s cluster..."
-                    sh "k3d image import ${fullImageName} -c k3s-default || docker save ${fullImageName} | docker exec -i k3s-default-server-0 ctr images import -"
-
-                    echo "Image built and imported to k3s successfully"
+                    
+                    // Also tag as latest
+                    sh "docker tag ${fullImageName} ${IMAGE_NAME}:latest"
+                    
+                    echo "Pushing to Docker Hub..."
+                    sh "docker push ${fullImageName}"
+                    sh "docker push ${IMAGE_NAME}:latest"
+                    
+                    echo "Image built and pushed successfully"
                 }
             }
         }
 
-        stage('Render Helm Templates') {
+        stage('Deploy with Helm') {
             steps {
                 script {
-                    def dashServiceName = SERVICE_NAME.replace('_', '-')
-                    echo "Rendering Helm templates for ${SERVICE_NAME} version ${VERSION}"
-                    def fullImageName = "${DOCKER_REGISTRY}/${IMAGE_NAME}"
-                    sh """
-                        cd ${CHARTS_REPO}
-                        helm dependency build ./examples/sample-service
-                        helm template ${dashServiceName} ./examples/sample-service \\
-                            -f ${VALUES_FILE} \\
-                            --set serviceAccount.create=true \\
-                            --set image.repository=${fullImageName} \\
-                            --set image.tag=${VERSION} \\
-                            --set securityContext.readOnlyRootFilesystem=false \\
-                            --set livenessProbe.httpGet.path=/login \\
-                            --set readinessProbe.httpGet.path=/login \\
-                            --set startupProbe.httpGet.path=/login \\
-                            > ${WORKSPACE}/${MANIFEST_FILE}
-                    """
-                    echo "Manifest rendered to ${MANIFEST_FILE}"
-                    sh "cat ${WORKSPACE}/${MANIFEST_FILE}"
-                }
-            }
-        }
-
-        stage('Deploy to K3s') {
-            steps {
-                script {
-                    def dashServiceName = SERVICE_NAME.replace('_', '-')
-                    echo "Deploying ${SERVICE_NAME} to K3s cluster"
+                    def fullImageName = "${IMAGE_NAME}:${VERSION}"
+                    
+                    echo "Building Helm dependencies..."
+                    sh "cd ${CHART_PATH} && helm dependency build"
+                    
+                    echo "Deploying ${SERVICE_NAME} to K3s using Helm..."
+                    
                     // Fix kubeconfig for Docker desktop access
                     sh """
-                        cp /var/jenkins_home/.kube/config ${WORKSPACE}/kubeconfig
-                        sed -i 's/0.0.0.0/host.docker.internal/g' ${WORKSPACE}/kubeconfig
-                        sed -i 's/127.0.0.1/host.docker.internal/g' ${WORKSPACE}/kubeconfig
+                        mkdir -p ${WORKSPACE}/.kube
+                        cp /var/jenkins_home/.kube/config ${WORKSPACE}/.kube/config
+                        sed -i 's/0.0.0.0/host.docker.internal/g' ${WORKSPACE}/.kube/config
+                        sed -i 's/127.0.0.1/host.docker.internal/g' ${WORKSPACE}/.kube/config
                     """
                     
-                    withEnv(["KUBECONFIG=${WORKSPACE}/kubeconfig"]) {
-                        // Create ServiceAccount if it doesn't exist (workaround for chart issue)
-                        sh "kubectl create sa ${dashServiceName} -n ${K8S_NAMESPACE} --insecure-skip-tls-verify=true || true"
+                    withEnv(["KUBECONFIG=${WORKSPACE}/.kube/config"]) {
+                        // Deploy using Helm
+                        sh """
+                            helm upgrade --install ${SERVICE_NAME} ${CHART_PATH} \
+                                -f ${VALUES_FILE} \
+                                --set image.repository=${IMAGE_NAME} \
+                                --set image.tag=${VERSION} \
+                                --set image.pullPolicy=Always \
+                                --set securityContext.readOnlyRootFilesystem=false \
+                                --namespace ${K8S_NAMESPACE} \
+                                --create-namespace \
+                                --wait \
+                                --timeout 5m \
+                                --insecure-skip-tls-verify
+                        """
                         
-                        sh "kubectl apply -f ${WORKSPACE}/${MANIFEST_FILE} -n ${K8S_NAMESPACE} --insecure-skip-tls-verify=true"
-                        
-                        // Restart deployment to ensure new image is pulled (if tag is latest)
-                        sh "kubectl rollout restart deployment/${dashServiceName} -n ${K8S_NAMESPACE} --insecure-skip-tls-verify=true"
-                        
-                        echo "Deployment successful"
+                        echo "Deployment successful!"
                         echo "Checking deployment status..."
-                        sh "kubectl rollout status deployment/${dashServiceName} -n ${K8S_NAMESPACE} --timeout=2m --insecure-skip-tls-verify=true"
+                        
+                        sh """
+                            kubectl get deployment ${SERVICE_NAME} -n ${K8S_NAMESPACE} --insecure-skip-tls-verify
+                            kubectl get pods -n ${K8S_NAMESPACE} -l app=${SERVICE_NAME} --insecure-skip-tls-verify
+                        """
                     }
                 }
             }
@@ -99,15 +105,15 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline completed successfully!"
-            echo "Service ${SERVICE_NAME} deployed to K3s"
+            echo "✅ Pipeline completed successfully!"
+            echo "Service ${SERVICE_NAME}:${VERSION} deployed to K3s"
         }
         failure {
-            echo "Pipeline failed. Check logs for details."
+            echo "❌ Pipeline failed. Check logs for details."
         }
         always {
             echo "Cleaning up workspace..."
-            archiveArtifacts artifacts: "${MANIFEST_FILE}", allowEmptyArchive: true
+            sh "rm -rf ${WORKSPACE}/.kube"
         }
     }
 }
