@@ -4,6 +4,7 @@ import javaposse.jobdsl.plugin.*
 import hudson.plugins.git.GitSCM
 import hudson.plugins.git.BranchSpec
 import hudson.plugins.git.extensions.impl.CloneOption
+import hudson.plugins.git.UserRemoteConfig
 
 // Auto-create seed job that generates pipelines from YAML files
 def jenkins = Jenkins.instance
@@ -24,7 +25,15 @@ seedJob = jenkins.createProject(FreeStyleProject, seedJobName)
 seedJob.setDescription("Auto-generated seed job that creates pipelines from applications/*.yaml files")
 
 // Configure Git SCM without credentials (public repo)
-def scm = new GitSCM("https://github.com/sahanw/algocity_pipelines.git")
+// Use UserRemoteConfig to explicitly set no credentials
+def userRemoteConfig = new UserRemoteConfig(
+    "https://github.com/sahanw/algocity_pipelines.git",  // url
+    "",                                                    // name
+    "",                                                    // refspec
+    null                                                   // credentialsId (null = no credentials)
+)
+
+def scm = new GitSCM([userRemoteConfig])
 scm.branches = [new BranchSpec("*/main")]
 
 // Add clone options to make it shallow and faster
