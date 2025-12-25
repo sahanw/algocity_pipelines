@@ -25,12 +25,12 @@ pipeline {
                 script {
                     echo "Cloning algocity_charts from GitHub..."
                     dir('algocity_charts') {
-                        git branch: 'main', url: "${CHARTS_REPO_URL}"
+                        git branch: 'main', url: "${CHARTS_REPO_URL}", credentialsId: 'github-token'
                     }
                     
                     echo "Cloning algocity_values from GitHub..."
                     dir('algocity_values') {
-                        git branch: 'main', url: "${VALUES_REPO_URL}"
+                        git branch: 'main', url: "${VALUES_REPO_URL}", credentialsId: 'github-token'
                     }
                     
                     echo "Repositories cloned successfully"
