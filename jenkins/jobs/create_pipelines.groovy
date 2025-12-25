@@ -1,36 +1,30 @@
-// Jenkins Job DSL Script
-// Auto-generates pipeline jobs from YAML definitions
+// Job DSL script to create pipeline jobs for AlgoCity applications
+// This script is executed by the seed-job to auto-generate Jenkins pipelines
 
-import groovy.yaml.YamlSlurper
+// Define applications with their repository URLs
+def applications = [
+    [
+        name: 'algocity-pipelines',
+        repoUrl: 'https://github.com/sahanw/algocity_pipelines.git'
+    ],
+    [
+        name: 'algocity-pathfinder',
+        repoUrl: 'https://github.com/sahanw/algocity_pathfinder.git'
+    ]
+]
 
-def yamlSlurper = new YamlSlurper()
-def applicationsDir = new File('/var/jenkins_home/workspace/applications')
-
-if (!applicationsDir.exists()) {
-    println "Applications directory not found, cloning repository..."
-    def cloneCmd = "git clone https://github.com/sahanw/algocity_pipelines.git /tmp/algocity_pipelines"
-    cloneCmd.execute().waitFor()
-    applicationsDir = new File('/tmp/algocity_pipelines/applications')
-}
-
-// Process each YAML file in applications directory
-applicationsDir.eachFileMatch(~/.*\.yaml$/) { file ->
-    def config = yamlSlurper.parse(file)
-    def appName = file.name.replaceAll('\\.yaml$', '')
-    def repoUrl = config.repository
-    
-    println "Creating pipeline job for: ${appName}"
-    
-    pipelineJob(appName) {
-        description("Auto-generated pipeline for ${appName}")
+// Create a pipeline job for each application
+applications.each { app ->
+    pipelineJob(app.name) {
+        description("Auto-generated pipeline for ${app.name}")
         
         definition {
             cpsScm {
                 scm {
                     git {
                         remote {
-                            url(repoUrl)
-                            credentials('github-credentials')
+                            url(app.repoUrl)
+                            credentials('github-token')
                         }
                         branch('*/main')
                     }
@@ -40,9 +34,9 @@ applicationsDir.eachFileMatch(~/.*\.yaml$/) { file ->
         }
         
         triggers {
-            scm('H/5 * * * *') // Poll SCM every 5 minutes
+            scm('H/5 * * * *')  // Poll SCM every 5 minutes
         }
     }
 }
 
-println "Pipeline jobs created successfully!"
+println "Successfully created ${applications.size()} pipeline jobs"
