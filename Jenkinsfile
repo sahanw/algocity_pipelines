@@ -4,6 +4,8 @@ pipeline {
     environment {
         SERVICE_NAME = 'algocity_pipelines'
         VERSION = '1.0.0'
+        DOCKER_REGISTRY = 'localhost:5000'  // Local registry for development
+        IMAGE_NAME = 'algocity'
         VALUES_FILE = '../values/algocity_pipelines/values/application_values.yaml'
         CHARTS_REPO = "${WORKSPACE}/charts"
         MANIFEST_FILE = 'k8s-manifest.yaml'
@@ -11,15 +13,7 @@ pipeline {
     }
 
     stages {
-        stage('Copy Source') {
-            steps {
-                script {
-                    // Clean workspace first to avoid permission issues with overwriting read-only git objects
-                    sh "find . -maxdepth 1 -not -name '.' -not -name '..' -exec rm -rf {} + || true"
-                    sh "cp -r /var/jenkins_home/source_code/. ."
-                }
-            }
-        }
+
 
         stage('Checkout Charts') {
             steps {
@@ -35,11 +29,14 @@ pipeline {
         stage('Build and Push Image') {
             steps {
                 script {
-                    echo "Building Docker image..."
-                    sh "docker build -t wickysd/algocity:${VERSION} ."
-                    
-                    echo "Pushing image to Docker Hub..."
-                    sh "docker push wickysd/algocity:${VERSION}"
+                    def fullImageName = "${DOCKER_REGISTRY}/${IMAGE_NAME}:${VERSION}"
+                    echo "Building Docker image: ${fullImageName}"
+                    sh "docker build -t ${fullImageName} ."
+
+                    echo "Importing image to k3s cluster..."
+                    sh "k3d image import ${fullImageName} -c k3s-default || docker save ${fullImageName} | docker exec -i k3s-default-server-0 ctr images import -"
+
+                    echo "Image built and imported to k3s successfully"
                 }
             }
         }
@@ -49,10 +46,20 @@ pipeline {
                 script {
                     def dashServiceName = SERVICE_NAME.replace('_', '-')
                     echo "Rendering Helm templates for ${SERVICE_NAME} version ${VERSION}"
+                    def fullImageName = "${DOCKER_REGISTRY}/${IMAGE_NAME}"
                     sh """
                         cd ${CHARTS_REPO}
                         helm dependency build ./examples/sample-service
-                        helm template ${dashServiceName} ./examples/sample-service -f ${VALUES_FILE} --set serviceAccount.create=true --set image.repository=wickysd/algocity --set image.tag=${VERSION} > ${WORKSPACE}/${MANIFEST_FILE}
+                        helm template ${dashServiceName} ./examples/sample-service \\
+                            -f ${VALUES_FILE} \\
+                            --set serviceAccount.create=true \\
+                            --set image.repository=${fullImageName} \\
+                            --set image.tag=${VERSION} \\
+                            --set securityContext.readOnlyRootFilesystem=false \\
+                            --set livenessProbe.httpGet.path=/login \\
+                            --set readinessProbe.httpGet.path=/login \\
+                            --set startupProbe.httpGet.path=/login \\
+                            > ${WORKSPACE}/${MANIFEST_FILE}
                     """
                     echo "Manifest rendered to ${MANIFEST_FILE}"
                     sh "cat ${WORKSPACE}/${MANIFEST_FILE}"
