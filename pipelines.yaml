@@ -1,0 +1,165 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: git-clone-task
+spec:
+  params:
+    - name: url
+      type: string
+      description: "Git URL under github.com."
+    - name: revision
+      type: string
+      default: "main"
+      description: "Branch/tag/commit to fetch."
+  workspaces:
+    - name: source
+  steps:
+    - name: clone
+      image: alpine/git:latest
+      script: |
+        set -eux
+        git clone $(params.url) $(workspaces.source.path)
+        cd $(workspaces.source.path)
+        git checkout $(params.revision)
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: kaniko-build-task
+spec:
+  params:
+    - name: image
+      type: string
+      description: "Registry location for the built image."
+  workspaces:
+    - name: source
+  steps:
+    - name: build
+      image: gcr.io/kaniko-project/executor:latest
+      env:
+        - name: DOCKER_CONFIG
+          value: /tekton/home/.docker
+      args:
+        - --dockerfile=$(workspaces.source.path)/Dockerfile
+        - --context=$(workspaces.source.path)
+        - --destination=$(params.image)
+        - --cache=true
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: k3s-deploy-task
+spec:
+  params:
+    - name: image
+      type: string
+      description: "Image that was built in the previous step."
+    - name: namespace
+      type: string
+      default: "jenkins-demo"
+      description: "Namespace in the k3s cluster where the job runs."
+  steps:
+    - name: deploy
+      image: bitnami/kubectl:latest
+      script: |
+        set -eux
+        kubectl apply -f - <<EOF
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: jenkins-demo-run
+          namespace: $(params.namespace)
+        spec:
+          template:
+            metadata:
+              name: jenkins-demo-run
+            spec:
+              containers:
+              - name: jenkins-demo
+                image: $(params.image)
+                imagePullPolicy: Always
+              restartPolicy: Never
+        EOF
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: github-docker-k3s
+spec:
+  params:
+    - name: repo-url
+      type: string
+      description: "GitHub repository containing the Dockerfile."
+    - name: revision
+      type: string
+      default: "main"
+      description: "Git reference to check out."
+    - name: image
+      type: string
+      description: "Destination image that the pipeline will publish."
+    - name: namespace
+      type: string
+      default: "jenkins-demo"
+  workspaces:
+    - name: source
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone-task
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+      workspaces:
+        - name: source
+          workspace: source
+    - name: build-image
+      taskRef:
+        name: kaniko-build-task
+      params:
+        - name: image
+          value: $(params.image)
+      workspaces:
+        - name: source
+          workspace: source
+    - name: deploy-k3s
+      taskRef:
+        name: k3s-deploy-task
+      params:
+        - name: image
+          value: $(params.image)
+        - name: namespace
+          value: $(params.namespace)
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: github-docker-k3s-run
+spec:
+  serviceAccountName: pipeline
+  pipelineRef:
+    name: github-docker-k3s
+  params:
+    - name: repo-url
+      value: https://github.com/example-org/jenkins-demo.git
+    - name: revision
+      value: main
+    - name: image
+      value: docker.io/example-org/my-jenkins:latest
+    - name: namespace
+      value: jenkins-demo
+  workspaces:
+    - name: source
+      volumeClaimTemplate:
+        metadata:
+          name: github-source
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
