@@ -46,8 +46,18 @@ RUN jenkins-plugin-cli --plugins \
     credentials-binding \
     github
 
-# SSH keys should be mounted as Kubernetes secrets at runtime
-# Create SSH directory with proper permissions
+# Install Jenkins plugins
+RUN jenkins-plugin-cli --plugins \
+    pipeline-model-api \
+    pipeline-model-extensions \
+    workflow-aggregator \
+    git \
+    job-dsl
+
+# Copy Jenkins init scripts
+COPY jenkins/init.groovy.d/ /usr/share/jenkins/ref/init.groovy.d/
+
+# Setup SSH directory
 RUN mkdir -p /var/jenkins_home/.ssh && \
     chown jenkins:jenkins /var/jenkins_home/.ssh && \
     chmod 700 /var/jenkins_home/.ssh
