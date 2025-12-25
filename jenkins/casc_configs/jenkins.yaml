@@ -1,0 +1,33 @@
+jenkins:
+  systemMessage: "AlgoCity CI/CD Pipelines - Auto-configured via JCasC"
+  
+jobs:
+  - script: >
+      freeStyleJob('seed-job') {
+        description('Auto-generated seed job that creates pipelines from applications/*.yaml files')
+        scm {
+          git {
+            remote {
+              url('https://github.com/sahanw/algocity_pipelines.git')
+            }
+            branch('*/main')
+            extensions {
+              cloneOptions {
+                shallow(true)
+                depth(1)
+              }
+            }
+          }
+        }
+        steps {
+          dsl {
+            external('jenkins/jobs/create-pipelines.groovy')
+            removeAction('DELETE')
+            removeViewAction('DELETE')
+            lookupStrategy('SEED_JOB')
+          }
+        }
+        triggers {
+          scm('H/5 * * * *')
+        }
+      }

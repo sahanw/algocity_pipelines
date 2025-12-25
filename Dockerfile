@@ -46,16 +46,18 @@ RUN jenkins-plugin-cli --plugins \
     credentials-binding \
     github
 
-# Install Jenkins plugins
+# Install Jenkins plugins including JCasC
 RUN jenkins-plugin-cli --plugins \
     pipeline-model-api \
     pipeline-model-extensions \
     workflow-aggregator \
     git \
-    job-dsl
+    job-dsl \
+    configuration-as-code
 
-# Copy Jenkins init scripts
-COPY jenkins/init.groovy.d/ /usr/share/jenkins/ref/init.groovy.d/
+# Copy JCasC configuration
+COPY jenkins/casc_configs/ /var/jenkins_home/casc_configs/
+ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs/jenkins.yaml
 
 # Setup SSH directory
 RUN mkdir -p /var/jenkins_home/.ssh && \
