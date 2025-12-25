@@ -1,0 +1,25 @@
+---
+# Common Pipeline Template
+# This template defines the standard pipeline stages for all AlgoCity applications
+
+pipeline:
+  stages:
+    - name: Checkout Repositories
+      description: Clone charts and values repositories from GitHub
+      steps:
+        - clone_charts_repo
+        - clone_values_repo
+    
+    - name: Build Docker Image
+      description: Build and push Docker image to registry
+      steps:
+        - build_image
+        - tag_latest
+        - push_to_registry
+    
+    - name: Deploy with Helm
+      description: Deploy to Kubernetes using Helm
+      steps:
+        - build_helm_dependencies
+        - render_manifest
+        - apply_to_k8s

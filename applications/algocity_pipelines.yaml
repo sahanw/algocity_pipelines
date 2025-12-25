@@ -1,8 +1,8 @@
 ---
-# Application: algocity-pathfinder
+# Application: algocity-pipelines
 # References: templates/common-pipeline.yaml
 
 application:
-  name: algocity-pathfinder
+  name: algocity-pipelines
 
 template: common-pipeline
