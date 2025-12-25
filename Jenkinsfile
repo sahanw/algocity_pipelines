@@ -40,18 +40,24 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    def fullImageName = "${IMAGE_NAME}:${VERSION}"
-                    echo "Building Docker image: ${fullImageName}"
-                    sh "docker build -t ${fullImageName} ."
-                    
-                    // Also tag as latest
-                    sh "docker tag ${fullImageName} ${IMAGE_NAME}:latest"
-                    
-                    echo "Pushing to Docker Hub..."
-                    sh "docker push ${fullImageName}"
-                    sh "docker push ${IMAGE_NAME}:latest"
-                    
-                    echo "Image built and pushed successfully"
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                        def fullImageName = "${IMAGE_NAME}:${VERSION}"
+                        echo "Logging into Docker Hub..."
+                        sh "echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin"
+                        
+                        echo "Building Docker image: ${fullImageName}"
+                        sh "docker build -t ${fullImageName} ."
+                        
+                        // Also tag as latest
+                        sh "docker tag ${fullImageName} ${IMAGE_NAME}:latest"
+                        
+                        echo "Pushing to Docker Hub..."
+                        sh "docker push ${fullImageName}"
+                        sh "docker push ${IMAGE_NAME}:latest"
+                        
+                        echo "Image built and pushed successfully"
+                        sh "docker logout"
+                    }
                 }
             }
         }
