@@ -14,6 +14,8 @@ pipeline {
         stage('Copy Source') {
             steps {
                 script {
+                    // Clean workspace first to avoid permission issues with overwriting read-only git objects
+                    sh "find . -maxdepth 1 -not -name '.' -not -name '..' -exec rm -rf {} + || true"
                     sh "cp -r /var/jenkins_home/source_code/. ."
                 }
             }

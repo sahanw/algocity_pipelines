@@ -12,9 +12,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Force install static docker binary to ensure it works
-RUN curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-20.10.24.tgz \
-    && tar xzvf docker-20.10.24.tgz --strip 1 -C /usr/local/bin docker/docker \
-    && rm docker-20.10.24.tgz
+RUN curl -fsSLO https://download.docker.com/linux/static/stable/x86_64/docker-26.1.3.tgz \
+    && tar xzvf docker-26.1.3.tgz --strip 1 -C /usr/local/bin docker/docker \
+    && rm docker-26.1.3.tgz
 
 RUN usermod -aG docker jenkins
 
@@ -29,7 +29,11 @@ RUN curl -fsSL -o /tmp/helm.tar.gz https://get.helm.sh/helm-${HELM_VERSION}-linu
     && mkdir -p /tmp/helm && tar -xzf /tmp/helm.tar.gz -C /tmp/helm \
     && mv /tmp/helm/linux-amd64/helm /usr/local/bin/helm \
     && chmod +x /usr/local/bin/helm \
+    && chmod +x /usr/local/bin/helm \
     && rm -rf /tmp/helm /tmp/helm.tar.gz
+
+# Install k3d to allow importing images into local k3s clusters
+RUN curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 
 # Seed Jenkins with job definitions so the pipeline appears immediately.
 COPY jenkins/init.groovy.d/ /usr/share/jenkins/ref/init.groovy.d/
@@ -46,13 +50,12 @@ RUN jenkins-plugin-cli --plugins \
     github
 
 # Copy SSH keys into the image so the Jenkins user can access GitHub/GitLab
-COPY id_ed25519 /var/jenkins_home/.ssh/id_ed25519
-COPY id_ed25519.pub /var/jenkins_home/.ssh/id_ed25519.pub
-
-# Ensure correct permissions for SSH keys
-RUN chown -R jenkins:jenkins /var/jenkins_home/.ssh \
-    && chmod 600 /var/jenkins_home/.ssh/id_ed25519 \
-    && chmod 644 /var/jenkins_home/.ssh/id_ed25519.pub
+# Copy SSH keys and config into the image
+# Note: /var/jenkins_home is a VOLUME, so RUN commands cannot modify it.
+# We must prepare files locally with correct permissions and COPY them.
+COPY --chown=jenkins:jenkins id_rsa /var/jenkins_home/.ssh/id_rsa
+COPY --chown=jenkins:jenkins id_rsa.pub /var/jenkins_home/.ssh/id_rsa.pub
+COPY --chown=jenkins:jenkins ssh_config /var/jenkins_home/.ssh/config
 
 USER jenkins
 

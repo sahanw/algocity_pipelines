@@ -1,3 +1,8 @@
 id_ed25519
 id_ed25519.pub
 .DS_Store
+id_rsa
+id_rsa.pub
+kubeconfig
+kubeconfig_fixed
+kubeconfig_fixed.bak
