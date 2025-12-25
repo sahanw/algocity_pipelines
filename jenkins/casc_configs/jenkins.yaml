@@ -33,7 +33,7 @@ jobs:
         }
         steps {
           dsl {
-            external('jenkins/jobs/create-pipelines.groovy')
+            external('jenkins/jobs/create_pipelines.groovy')
             removeAction('DELETE')
             removeViewAction('DELETE')
             lookupStrategy('SEED_JOB')
