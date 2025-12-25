@@ -1,8 +1,8 @@
 ---
 # Application: algocity-pathfinder
-# References: templates/common-pipeline.yaml
 
-application:
-  name: algocity-pathfinder
+# GitHub repository containing the application code
+repository: https://github.com/sahanw/algocity_pathfinder.git
 
-template: common-pipeline
+# Reference to common pipeline template
+template: templates/common-pipeline.yaml
